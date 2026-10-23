@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Customer Tally Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<style>
+:root{
+  --paper:#F3F5F7; --surface:#FFFFFF; --ink:#16212B; --muted:#5A6774; --line:#D3DAE0;
+  --accent:#0E5E5A; --accent-ink:#FFFFFF; --accent-soft:#DDEDEB;
+  --bad:#B3261E; --bad-soft:#FBE3E1; --ok:#1E7A4C; --ok-soft:#DFF1E6; --warn:#8A5A00; --warn-soft:#FDF0D2;
+  --focus:#2B6CB0;
+  color-scheme: light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#11171C; --surface:#1A2229; --ink:#E6ECF0; --muted:#9AA8B4; --line:#2E3A44;
+    --accent:#4FB3AA; --accent-ink:#0B1A19; --accent-soft:#17312F;
+    --bad:#FF8A80; --bad-soft:#3A1B19; --ok:#6FD39C; --ok-soft:#163023; --warn:#F2C26B; --warn-soft:#352A12;
+    --focus:#7FB3F0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11171C; --surface:#1A2229; --ink:#E6ECF0; --muted:#9AA8B4; --line:#2E3A44;
+  --accent:#4FB3AA; --accent-ink:#0B1A19; --accent-soft:#17312F;
+  --bad:#FF8A80; --bad-soft:#3A1B19; --ok:#6FD39C; --ok-soft:#163023; --warn:#F2C26B; --warn-soft:#352A12;
+  --focus:#7FB3F0; color-scheme: dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.5;font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 64px}
+h1{font-size:28px;line-height:1.2;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
+h2{font-size:18px;margin:0 0 12px;font-weight:600}
+p{margin:0}
+.lede{color:var(--muted);max-width:68ch}
+.privacy{margin-top:10px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.privacy svg{flex:none}
+section{margin-top:28px}
+
+/* file slots */
+.slots{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:820px){.slots{grid-template-columns:1fr}}
+.slot{position:relative;background:var(--surface);border:1.5px dashed var(--line);border-radius:10px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:6px;min-height:150px;transition:border-color .15s,background .15s}
+.slot.drag{border-color:var(--accent);background:var(--accent-soft)}
+.slot.ok{border-style:solid;border-color:var(--ok)}
+.slot.err{border-style:solid;border-color:var(--bad)}
+.slot-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.slot-name{font-weight:600}
+.req{font-size:12px;color:var(--muted)}
+.slot-hint{font-size:13px;color:var(--muted)}
+.slot input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.pick{margin-top:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{font:inherit;font-weight:600;border-radius:7px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;cursor:pointer;line-height:1.2}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.btn.small{padding:5px 10px;font-size:13px;font-weight:500}
+.btn.link{border:none;background:none;padding:4px 2px;color:var(--muted);text-decoration:underline;font-weight:500;font-size:13px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.status{font-size:13px;min-height:1.5em}
+.status.ok{color:var(--ok)} .status.err{color:var(--bad)} .status.busy{color:var(--muted)}
+.file-name{font-size:13px;font-weight:500;word-break:break-all}
+
+.runbar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.tol{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--muted)}
+.tol input{font:inherit;width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+.runmsg{font-size:13px;color:var(--muted)}
+
+/* results */
+#results[hidden]{display:none}
+.verdict{font-size:24px;font-weight:700;line-height:1.25;margin-bottom:4px}
+.verdict.good{color:var(--ok)} .verdict.bad{color:var(--bad)}
+.meta{font-size:13px;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.chip{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.chip b{font-weight:700}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.dot{width:8px;height:8px;border-radius:50%}
+.tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.tools input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);min-width:240px;flex:1;max-width:360px}
+.spacer{flex:1}
+.dlnote{font-size:13px;color:var(--muted)}
+
+.notice{margin-top:16px;border-radius:9px;padding:12px 14px;background:var(--warn-soft);color:var(--ink);border-left:4px solid var(--warn);font-size:14px}
+.notice summary{cursor:pointer;font-weight:600}
+.notice ul{margin:8px 0 0;padding-left:18px;max-height:220px;overflow:auto}
+
+.tablebox{margin-top:14px;overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;white-space:nowrap}
+th{font-weight:600;color:var(--muted);font-size:13px;background:var(--surface);position:sticky;top:0}
+td.num,th.num{text-align:right}
+tr:last-child td{border-bottom:none}
+td.idcell{font-weight:600}
+tr.row-bad td.idcell{color:var(--bad)}
+td.bad{background:var(--bad-soft)}
+.struck{text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:2px;color:var(--bad)}
+.fix{display:block;font-size:12.5px;color:var(--ink);font-weight:600;margin-top:2px}
+.fix span{font-weight:400;color:var(--muted)}
+.tag{display:inline-block;font-size:12.5px;font-weight:600;border-radius:5px;padding:2px 8px}
+.tag.ok{background:var(--ok-soft);color:var(--ok)}
+.tag.bad{background:var(--bad-soft);color:var(--bad)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)}
+.tag.missing{background:var(--bad-soft);color:var(--bad)}
+.note{display:block;font-size:12.5px;color:var(--muted);white-space:normal;max-width:34ch;margin-top:3px}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.more{padding:10px 12px;font-size:13px;color:var(--muted);border-top:1px solid var(--line)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:8px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Customer tally check</h1>
+    <p class="lede">Upload the master files and the input sheet you want to check. Every customer in the input is compared with the masters, and any figure that doesn’t agree is marked with the correct value next to it.</p>
+    <p class="privacy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Files are read inside your browser. Nothing is uploaded or stored.</p>
+  </header>
+
+  <section aria-labelledby="files-h">
+    <h2 id="files-h">Files</h2>
+    <div class="slots">
+      <div class="slot" data-slot="txn">
+        <div class="slot-head"><span class="slot-name">Transaction master</span><span class="req">CSV or Excel</span></div>
+        <p class="slot-hint">Every deposit and withdrawal: Customer ID, Date, Transaction Type, Amount, Current Balance.</p>
+        <p class="file-name"></p>
+        <p class="status" role="status"></p>
+        <div class="pick"><label class="btn small"><input type="file" accept=".csv,.txt,.xlsx,.xls">Choose file</label><span class="req">or drop it here</span><button class="btn link clear" type="button" hidden>Remove</button></div>
+      </div>
+      <div class="slot" data-slot="sum">
+        <div class="slot-head"><span class="slot-name">Customer summary</span><span class="req">CSV or Excel</span></div>
+        <p class="slot-hint">One row per customer: Customer ID, Name, Total Deposits, Total Withdrawals, Current Balance.</p>
+        <p class="file-name"></p>
+        <p class="status" role="status"></p>
+        <div class="pick"><label class="btn small"><input type="file" accept=".csv,.txt,.xlsx,.xls">Choose file</label><span class="req">or drop it here</span><button class="btn link clear" type="button" hidden>Remove</button></div>
+      </div>
+      <div class="slot" data-slot="input">
+        <div class="slot-head"><span class="slot-name">Input to check</span><span class="req">Excel or CSV</span></div>
+        <p class="slot-hint">Your entries. Needs a Customer ID column plus any of: Name, Deposits, Withdrawals, Balance.</p>
+        <p class="file-name"></p>
+        <p class="status" role="status"></p>
+        <div class="pick"><label class="btn small"><input type="file" accept=".xlsx,.xls,.csv,.txt">Choose file</label><span class="req">or drop it here</span><button class="btn link clear" type="button" hidden>Remove</button></div>
+      </div>
+    </div>
+    <div class="runbar">
+      <button class="btn primary" id="run" type="button" disabled>Run tally</button>
+      <label class="tol">Allowed difference ₹ <input id="tol" type="number" min="0" step="0.01" value="0.00" inputmode="decimal"></label>
+      <span class="runmsg" id="runmsg">Add the input file and at least one master file.</span>
+    </div>
+  </section>
+
+  <section id="results" hidden aria-labelledby="verdict">
+    <p class="verdict" id="verdict"></p>
+    <p class="meta" id="meta"></p>
+    <div id="masterNotice"></div>
+    <div class="filters" role="group" aria-label="Show customers">
+      <button class="chip" data-f="all" aria-pressed="true">All <b id="c-all">0</b></button>
+      <button class="chip" data-f="bad" aria-pressed="false"><span class="dot" style="background:var(--bad)"></span>Mismatch <b id="c-bad">0</b></button>
+      <button class="chip" data-f="missing" aria-pressed="false"><span class="dot" style="background:var(--bad);opacity:.5"></span>Not in master <b id="c-missing">0</b></button>
+      <button class="chip" data-f="warn" aria-pressed="false"><span class="dot" style="background:var(--warn)"></span>Needs a look <b id="c-warn">0</b></button>
+      <button class="chip" data-f="ok" aria-pressed="false"><span class="dot" style="background:var(--ok)"></span>Matched <b id="c-ok">0</b></button>
+    </div>
+    <div class="tools">
+      <input type="search" id="q" placeholder="Search by Customer ID or name" aria-label="Search by Customer ID or name">
+      <span class="spacer"></span>
+      <button class="btn small" id="dlx" type="button">Download marked Excel</button>
+      <button class="btn small" id="dlc" type="button">Download mismatch list (CSV)</button>
+      <span class="dlnote" id="dlnote" hidden>Downloads aren’t available in this view.</span>
+    </div>
+    <div class="tablebox"><table id="tbl"><thead></thead><tbody></tbody></table><div class="more" id="more" hidden></div></div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+const ALIASES = {
+  id:["customer id","cust id","customerid","customer no","customer number","account id"],
+  name:["customer name","name"],
+  open_date:["account open date","open date","account opening date"],
+  opening:["opening balance"],
+  deposits:["total deposits","total deposit","deposits","total credits","total credit"],
+  withdrawals:["total withdrawals","total withdrawal","withdrawals","total debits","total debit"],
+  balance:["current balance","closing balance","balance"],
+  txns:["no of transactions","number of transactions","transactions","transaction count","txn count"],
+  last_date:["last transaction date","last txn date"],
+  date:["date","transaction date","txn date"],
+  type:["transaction type","type","txn type"],
+  amount:["amount","transaction amount","txn amount"]
+};
+const FIELDS = {
+  name:{label:"Customer Name",kind:"text"},
+  open_date:{label:"Account Open Date",kind:"date"},
+  opening:{label:"Opening Balance",kind:"money"},
+  deposits:{label:"Total Deposits",kind:"money"},
+  withdrawals:{label:"Total Withdrawals",kind:"money"},
+  balance:{label:"Current Balance",kind:"money"},
+  txns:{label:"No. of Transactions",kind:"int"},
+  last_date:{label:"Last Transaction Date",kind:"date"}
+};
+const S = {txn:null,sum:null,input:null};
+let RESULT = null, FILTER = "all";
+const $ = s => document.querySelector(s);
+
+/* ---------- helpers ---------- */
+const normH = h => String(h==null?"":h).toLowerCase().replace(/₹/g," ").replace(/\(\s*rs\.?\s*\)/g," ").replace(/\brs\b\.?/g," ").replace(/[^a-z0-9]+/g," ").trim();
+const normId = v => v==null ? "" : String(v).trim().toUpperCase();
+const normText = v => String(v==null?"":v).trim().replace(/\s+/g," ").toLowerCase();
+const pad = n => String(n).padStart(2,"0");
+function num(v){
+  if(v==null||v==="") return null;
+  if(typeof v==="number") return v;
+  const s=String(v).trim().replace(/^rs\.?/i,"").replace(/[₹,\s]/g,"");
+  if(s==="") return null;
+  const n=Number(s); return isNaN(n)?NaN:n;
+}
+function normDate(v){
+  if(v==null||v==="") return null;
+  if(v instanceof Date && !isNaN(v)) return pad(v.getDate())+"-"+pad(v.getMonth()+1)+"-"+v.getFullYear();
+  if(typeof v==="number"){const d=new Date(Math.round((v-25569)*86400000));return pad(d.getUTCDate())+"-"+pad(d.getUTCMonth()+1)+"-"+d.getUTCFullYear();}
+  const s=String(v).trim(); let m;
+  if((m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/))) return pad(m[1])+"-"+pad(m[2])+"-"+m[3];
+  if((m=s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) return pad(m[3])+"-"+pad(m[2])+"-"+m[1];
+  return s;
+}
+const r2 = n => Math.round(n*100)/100;
+const money = n => (n==null||isNaN(n)) ? "—" : "₹"+Number(n).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const intf = n => (n==null||isNaN(n)) ? "—" : Number(n).toLocaleString("en-IN");
+function show(kind,v){
+  if(v==null||v==="") return "—";
+  if(kind==="money"){const n=num(v);return isNaN(n)?String(v):money(n);}
+  if(kind==="int"){const n=num(v);return isNaN(n)?String(v):intf(n);}
+  if(kind==="date") return normDate(v);
+  return String(v);
+}
+function parseKind(kind,v){
+  if(kind==="money") { const n=num(v); return n==null?null:(isNaN(n)?NaN:r2(n)); }
+  if(kind==="int") { const n=num(v); return n==null?null:(isNaN(n)?NaN:Math.round(n)); }
+  if(kind==="date") return normDate(v);
+  return v==null?null:String(v).trim();
+}
+const tick = () => new Promise(r=>setTimeout(r,30));
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove("show"),3200);}
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- reading ---------- */
+async function readRows(file){
+  const ext=(file.name.split(".").pop()||"").toLowerCase();
+  if(ext==="csv"||ext==="txt"){
+    if(typeof Papa==="undefined") throw new Error("The CSV reader didn’t load. Check your connection and reload the page.");
+    const text=await file.text();
+    return Papa.parse(text,{skipEmptyLines:"greedy"}).data;
+  }
+  if(ext==="xlsx"||ext==="xls"||ext==="xlsm"){
+    if(typeof XLSX==="undefined") throw new Error("The Excel reader didn’t load. Check your connection and reload the page.");
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:"array",cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,blankrows:false});
+    return rows.map(r=>{let e=r.length;while(e>0&&(r[e-1]==null||r[e-1]===""))e--;return r.slice(0,e);});
+  }
+  throw new Error("Use a .csv or .xlsx file.");
+}
+function findHeader(rows){
+  for(let i=0;i<Math.min(rows.length,25);i++){
+    if((rows[i]||[]).some(c=>ALIASES.id.includes(normH(c)))) return i;
+  }
+  return -1;
+}
+function mapCols(header){
+  const map={}, perCol=[];
+  header.forEach((h,i)=>{
+    const n=normH(h); let key=null;
+    for(const k in ALIASES){ if(ALIASES[k].includes(n)){ key=k; break; } }
+    perCol[i]=key;
+    if(key && map[key]==null) map[key]=i;
+  });
+  return {map,perCol};
+}
+function noHeader(){ return new Error("Couldn’t find a “Customer ID” column in the first rows of this file."); }
+
+const PARSERS = {
+  txn(rows){
+    const h=findHeader(rows); if(h<0) throw noHeader();
+    const {map}=mapCols(rows[h]);
+    if(map.type==null||map.amount==null||map.balance==null){
+      if(map.deposits!=null||map.withdrawals!=null) throw new Error("This looks like a summary file. Put it in the Customer summary box.");
+      throw new Error("This file needs Transaction Type, Amount and Current Balance columns.");
+    }
+    const agg=new Map(); let n=0;
+    for(let i=h+1;i<rows.length;i++){
+      const r=rows[i]; const id=normId(r[map.id]); if(!id) continue; n++;
+      let a=agg.get(id);
+      if(!a){a={name:map.name!=null?String(r[map.name]??"").trim():undefined,opening:null,deposits:0,withdrawals:0,balance:null,txns:0,last_date:null,breaks:0,_prev:null};agg.set(id,a);}
+      const type=normText(r[map.type]); const amt=num(r[map.amount]); const bal=num(r[map.balance]);
+      const date=map.date!=null?normDate(r[map.date]):null;
+      if(type.includes("opening")){ a.opening=amt; a._prev=bal; a.balance=bal; continue; }
+      let exp=null;
+      if(type.startsWith("deposit")||type.startsWith("credit")){ a.deposits+=amt||0; if(a._prev!=null&&amt!=null) exp=a._prev+amt; }
+      else if(type.startsWith("withdraw")||type.startsWith("debit")){ a.withdrawals+=amt||0; if(a._prev!=null&&amt!=null) exp=a._prev-amt; }
+      if(exp!=null&&bal!=null&&Math.abs(exp-bal)>0.011) a.breaks++;
+      a._prev=bal; a.balance=bal; a.txns++; if(date) a.last_date=date;
+    }
+    if(!agg.size) throw new Error("No customer rows were found under the header.");
+    agg.forEach(a=>{a.deposits=r2(a.deposits);a.withdrawals=r2(a.withdrawals);if(a.balance!=null)a.balance=r2(a.balance);if(a.opening!=null)a.opening=r2(a.opening);if(map.date==null)a.last_date=undefined;delete a._prev;});
+    return {map:agg,info:`${n.toLocaleString("en-IN")} transactions for ${agg.size.toLocaleString("en-IN")} customers`};
+  },
+  sum(rows){
+    const h=findHeader(rows); if(h<0) throw noHeader();
+    const {map}=mapCols(rows[h]);
+    if(map.type!=null&&map.amount!=null) throw new Error("This looks like the transaction file. Put it in the Transaction master box.");
+    const keys=Object.keys(FIELDS).filter(k=>map[k]!=null);
+    if(!keys.length) throw new Error("This file needs columns such as Total Deposits, Total Withdrawals or Current Balance.");
+    const out=new Map();
+    for(let i=h+1;i<rows.length;i++){
+      const r=rows[i]; const id=normId(r[map.id]); if(!id) continue;
+      const rec={}; keys.forEach(k=>rec[k]=parseKind(FIELDS[k].kind,r[map[k]])); out.set(id,rec);
+    }
+    if(!out.size) throw new Error("No customer rows were found under the header.");
+    return {map:out,keys,info:`${out.size.toLocaleString("en-IN")} customers, ${keys.length} columns to compare`};
+  },
+  input(rows){
+    const h=findHeader(rows); if(h<0) throw noHeader();
+    const header=rows[h]; const {map,perCol}=mapCols(header);
+    const keys=Object.keys(FIELDS).filter(k=>map[k]!=null);
+    if(!keys.length) throw new Error("Add at least one column to check, such as Customer Name or Current Balance.");
+    const data=[];
+    for(let i=h+1;i<rows.length;i++){ const r=rows[i]||[]; if(!normId(r[map.id])) continue; data.push(r); }
+    if(!data.length) throw new Error("No customer rows were found under the header.");
+    return {header,perCol,idCol:map.id,keys,rows:data,info:`${data.length.toLocaleString("en-IN")} customers to check`};
+  }
+};
+
+/* ---------- slots ---------- */
+document.querySelectorAll(".slot").forEach(el=>{
+  const slot=el.dataset.slot, input=el.querySelector("input[type=file]");
+  input.addEventListener("change",()=>{ if(input.files[0]) loadSlot(el,input.files[0]); input.value=""; });
+  el.addEventListener("dragover",e=>{e.preventDefault();el.classList.add("drag");});
+  el.addEventListener("dragleave",()=>el.classList.remove("drag"));
+  el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("drag");const f=e.dataTransfer.files[0];if(f)loadSlot(el,f);});
+  el.querySelector(".clear").addEventListener("click",()=>{S[slot]=null;el.className="slot";el.querySelector(".file-name").textContent="";setStatus(el,"","");el.querySelector(".clear").hidden=true;updateRun();});
+});
+function setStatus(el,cls,msg){const s=el.querySelector(".status");s.className="status "+cls;s.textContent=msg;}
+async function loadSlot(el,file){
+  const slot=el.dataset.slot;
+  el.className="slot"; el.querySelector(".file-name").textContent=file.name;
+  setStatus(el,"busy","Reading the file…"); await tick();
+  try{
+    const rows=await readRows(file);
+    const parsed=PARSERS[slot](rows); parsed.fileName=file.name; S[slot]=parsed;
+    el.classList.add("ok"); setStatus(el,"ok",parsed.info);
+  }catch(err){
+    S[slot]=null; el.classList.add("err"); setStatus(el,"err",err.message||"This file couldn’t be read.");
+  }
+  el.querySelector(".clear").hidden=false; updateRun();
+}
+function updateRun(){
+  const ready=!!S.input&&(!!S.sum||!!S.txn);
+  $("#run").disabled=!ready;
+  $("#runmsg").textContent = ready
+    ? (S.sum&&S.txn ? "Both masters loaded. They’ll also be checked against each other." : "One master loaded. Add the other to cross-check the masters too.")
+    : (!S.input ? "Add the input file and at least one master file." : "Add at least one master file.");
+}
+
+/* ---------- tally ---------- */
+function same(kind,a,b,tol){
+  if(a==null&&b==null) return true;
+  if(a==null||b==null) return false;
+  if(kind==="money") return !isNaN(a)&&!isNaN(b)&&Math.abs(a-b)<=tol+0.0049;
+  if(kind==="int") return a===b;
+  if(kind==="date") return a===b;
+  return normText(a)===normText(b);
+}
+function runTally(){
+  const tol=Math.max(0,Number($("#tol").value)||0);
+  const sum=S.sum?S.sum.map:null, txn=S.txn?S.txn.map:null;
+  // master vs master
+  const masterIssues=new Map();
+  const addIssue=(id,msg)=>{if(!masterIssues.has(id))masterIssues.set(id,[]);masterIssues.get(id).push(msg);};
+  if(txn) txn.forEach((a,id)=>{ if(a.breaks) addIssue(id,`Running balance doesn’t add up in ${a.breaks} transaction row${a.breaks>1?"s":""}`); });
+  if(sum&&txn){
+    sum.forEach((s,id)=>{
+      const t=txn.get(id); if(!t){addIssue(id,"In the customer summary but has no transactions");return;}
+      ["opening","deposits","withdrawals","balance","txns","last_date","name"].forEach(k=>{
+        if(s[k]===undefined||t[k]===undefined||t[k]===null&&k==="opening") return;
+        if(!same(FIELDS[k].kind,s[k],t[k],0)) addIssue(id,`${FIELDS[k].label}: summary shows ${show(FIELDS[k].kind,s[k])}, transactions give ${show(FIELDS[k].kind,t[k])}`);
+      });
+    });
+    txn.forEach((t,id)=>{ if(!sum.has(id)) addIssue(id,"Has transactions but isn’t in the customer summary"); });
+  }
+  // input vs master
+  const inp=S.input, seen=new Map();
+  inp.rows.forEach(r=>{const id=normId(r[inp.idCol]);seen.set(id,(seen.get(id)||0)+1);});
+  const rows=inp.rows.map((r,idx)=>{
+    const id=normId(r[inp.idCol]);
+    const m=(sum&&sum.get(id))||(txn&&txn.get(id))||null;
+    const res={idx,id,raw:r,cells:{},status:"ok",notes:[]};
+    if(!m){res.status="missing";res.notes.push("Customer ID not found in the master files");}
+    else{
+      inp.keys.forEach(k=>{
+        const ci=inp.perCol.indexOf(k); const kind=FIELDS[k].kind;
+        const iv=parseKind(kind,r[ci]); const mv=m[k];
+        if(mv===undefined){res.cells[k]={state:"na"};return;}
+        const ok=same(kind,iv,mv,tol);
+        const cell={state:ok?"ok":"bad",iv,mv};
+        if(!ok){
+          if(kind==="money"&&iv!=null&&!isNaN(iv)&&mv!=null) cell.diff=r2(iv-mv);
+          res.notes.push(kind==="money"&&cell.diff!=null
+            ? `${FIELDS[k].label}: entered ${money(iv)}, master ${money(mv)} (${cell.diff>0?"+":"−"}${money(Math.abs(cell.diff)).slice(1)} ${cell.diff>0?"extra":"short"})`
+            : `${FIELDS[k].label}: entered ${iv==null?"blank":(kind==="text"?iv:show(kind,iv))}, master ${show(kind,mv)}`);
+        }
+        res.cells[k]=cell;
+      });
+      if(Object.values(res.cells).some(c=>c.state==="bad")) res.status="bad";
+    }
+    if(seen.get(id)>1){res.notes.push("This Customer ID appears more than once in the input"); if(res.status==="ok")res.status="warn";}
+    if(masterIssues.has(id)){res.masterNote=true; if(res.status==="ok")res.status="warn"; res.notes.push("Master files disagree for this customer");}
+    return res;
+  });
+  RESULT={rows,masterIssues,tol,at:new Date()};
+  renderResults();
+}
+$("#run").addEventListener("click",async()=>{
+  const b=$("#run"); b.disabled=true; b.textContent="Checking…"; await tick();
+  try{ runTally(); $("#results").hidden=false; $("#results").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"start"}); }
+  catch(e){ toast("Something went wrong while checking: "+(e.message||e)); }
+  b.textContent="Run tally"; b.disabled=false;
+});
+
+/* ---------- render ---------- */
+function counts(){const c={all:0,ok:0,bad:0,missing:0,warn:0};RESULT.rows.forEach(r=>{c.all++;c[r.status]++;});return c;}
+function renderResults(){
+  const c=counts();
+  for(const k in c) $("#c-"+k).textContent=c[k].toLocaleString("en-IN");
+  const v=$("#verdict"), wrong=c.bad+c.missing;
+  if(!wrong){v.className="verdict good";v.textContent=`All ${c.all.toLocaleString("en-IN")} customers match the master files.`;}
+  else{v.className="verdict bad";v.textContent=`${wrong.toLocaleString("en-IN")} of ${c.all.toLocaleString("en-IN")} customers don’t match.`;}
+  const used=[S.txn&&S.txn.fileName,S.sum&&S.sum.fileName].filter(Boolean).join(" and ");
+  $("#meta").textContent=`Checked ${S.input.fileName} against ${used} at ${RESULT.at.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}. Allowed difference ${money(RESULT.tol)}.`;
+  const mi=RESULT.masterIssues, box=$("#masterNotice");
+  if(mi.size){
+    const items=[...mi.entries()].slice(0,300).map(([id,l])=>`<li><b>${esc(id)}</b>: ${l.map(esc).join("; ")}</li>`).join("");
+    box.innerHTML=`<details class="notice"><summary>The master files disagree for ${mi.size.toLocaleString("en-IN")} customer${mi.size>1?"s":""}. Fix the masters before trusting those results.</summary><ul>${items}</ul>${mi.size>300?"<p>Showing the first 300.</p>":""}</details>`;
+  } else if(S.sum&&S.txn){
+    box.innerHTML=`<p class="meta" style="margin-top:6px">The transaction master and the customer summary agree with each other for every customer.</p>`;
+  } else box.innerHTML="";
+  renderTable();
+}
+document.querySelectorAll(".chip").forEach(ch=>ch.addEventListener("click",()=>{
+  FILTER=ch.dataset.f; document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",String(x===ch))); renderTable();
+}));
+$("#q").addEventListener("input",()=>renderTable());
+function renderTable(){
+  const inp=S.input, q=normText($("#q").value), nameCol=inp.perCol.indexOf("name");
+  let list=RESULT.rows.filter(r=>FILTER==="all"||r.status===FILTER);
+  if(q) list=list.filter(r=>r.id.toLowerCase().includes(q)||(nameCol>=0&&normText(r.raw[nameCol]).includes(q)));
+  const cols=inp.header.map((h,i)=>({i,label:h==null?"":String(h),key:inp.perCol[i]})).filter(c=>c.label!==""||c.i===inp.idCol);
+  const isNum=k=>k&&["money","int"].includes(FIELDS[k]?.kind);
+  $("#tbl thead").innerHTML="<tr>"+cols.map(c=>`<th class="${isNum(c.key)?"num":""}">${esc(c.label)}</th>`).join("")+"<th>Result</th></tr>";
+  const LIMIT=500;
+  const html=list.slice(0,LIMIT).map(r=>{
+    const tds=cols.map(c=>{
+      if(c.i===inp.idCol) return `<td class="idcell">${esc(r.id)}</td>`;
+      const k=c.key, raw=r.raw[c.i];
+      if(!k||!FIELDS[k]) return `<td>${esc(raw==null?"":raw)}</td>`;
+      const kind=FIELDS[k].kind, cell=r.cells[k], cls=isNum(k)?"num":"";
+      if(cell&&cell.state==="bad"){
+        const d=cell.diff!=null?` <span>(${cell.diff>0?"+":"−"}${money(Math.abs(cell.diff)).slice(1)})</span>`:"";
+        return `<td class="${cls} bad"><span class="struck">${esc(show(kind,raw))}</span><span class="fix">${esc(show(kind,cell.mv))}${d}</span></td>`;
+      }
+      return `<td class="${cls}">${esc(show(kind,raw))}</td>`;
+    }).join("");
+    const tag={ok:'<span class="tag ok">Matched</span>',bad:'<span class="tag bad">Mismatch</span>',missing:'<span class="tag missing">Not in master</span>',warn:'<span class="tag warn">Needs a look</span>'}[r.status];
+    const notes=r.status==="bad"?"":r.notes.map(n=>`<span class="note">${esc(n)}</span>`).join("");
+    return `<tr class="${r.status==="bad"||r.status==="missing"?"row-bad":""}">${tds}<td>${tag}${notes}</td></tr>`;
+  }).join("");
+  $("#tbl tbody").innerHTML=html||`<tr><td colspan="${cols.length+1}" class="empty">No customers match this filter.</td></tr>`;
+  const more=$("#more");
+  if(list.length>LIMIT){more.hidden=false;more.textContent=`Showing the first ${LIMIT} of ${list.length.toLocaleString("en-IN")}. Search for a Customer ID, or download the Excel file to see every row.`;}
+  else more.hidden=true;
+}
+
+/* ---------- export ---------- */
+const STATUS_LABEL={ok:"OK",bad:"MISMATCH",missing:"NOT IN MASTER",warn:"NEEDS A LOOK"};
+function buildWorkbook(){
+  const inp=S.input, wb=XLSX.utils.book_new();
+  const header=inp.header.map(h=>h==null?"":h).concat(["Tally Status","Remarks"]);
+  const aoa=[header];
+  RESULT.rows.forEach(r=>{
+    const row=inp.header.map((_,i)=>{const v=r.raw[i];return v==null?"":v;});
+    row.push(STATUS_LABEL[r.status], r.notes.join("; ")||"Matches the master files");
+    aoa.push(row);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(aoa,{cellDates:false});
+  const H={font:{bold:true,color:{rgb:"16212B"}},fill:{patternType:"solid",fgColor:{rgb:"FFF2A8"}},alignment:{vertical:"center"}};
+  const RED={fill:{patternType:"solid",fgColor:{rgb:"FFC7CE"}},font:{color:{rgb:"9C0006"},bold:true}};
+  const GREEN={fill:{patternType:"solid",fgColor:{rgb:"C6EFCE"}},font:{color:{rgb:"006100"},bold:true}};
+  const AMBER={fill:{patternType:"solid",fgColor:{rgb:"FFEB9C"}},font:{color:{rgb:"7A5300"},bold:true}};
+  const nCols=header.length, sCol=nCols-2;
+  for(let c=0;c<nCols;c++){const a=XLSX.utils.encode_cell({r:0,c});if(ws[a])ws[a].s=H;}
+  RESULT.rows.forEach((r,ri)=>{
+    const R=ri+1;
+    inp.perCol.forEach((k,ci)=>{
+      const a=XLSX.utils.encode_cell({r:R,c:ci}); if(!ws[a]) ws[a]={t:"s",v:""};
+      if(k&&FIELDS[k]&&FIELDS[k].kind==="money"&&ws[a].t==="n") ws[a].z="#,##0.00";
+      const cell=k&&r.cells[k];
+      if(cell&&cell.state==="bad"){
+        ws[a].s=RED;
+        const kind=FIELDS[k].kind;
+        ws[a].c=[{a:"Tally check",t:`Master value: ${kind==="money"?"Rs "+Number(cell.mv).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}):show(kind,cell.mv)}`}];
+        ws[a].c.hidden=true;
+      }
+    });
+    const ida=XLSX.utils.encode_cell({r:R,c:inp.idCol});
+    if((r.status==="bad"||r.status==="missing")&&ws[ida]) ws[ida].s=RED;
+    const sa=XLSX.utils.encode_cell({r:R,c:sCol});
+    ws[sa].s=r.status==="ok"?GREEN:(r.status==="warn"?AMBER:RED);
+    const ra=XLSX.utils.encode_cell({r:R,c:sCol+1}); ws[ra].s={alignment:{wrapText:true,vertical:"top"}};
+  });
+  ws["!cols"]=header.map((h,i)=>({wch:i===sCol+1?70:Math.max(12,String(h).length+4)}));
+  XLSX.utils.book_append_sheet(wb,ws,"Tally Result");
+  // mismatch list
+  const mm=[["Customer ID","Customer Name","Field","Your Input","Master Value","Difference (Rs)"]];
+  const nameCol=inp.perCol.indexOf("name");
+  RESULT.rows.forEach(r=>{
+    const nm=nameCol>=0?(r.raw[nameCol]??""):"";
+    if(r.status==="missing") mm.push([r.id,nm,"Customer ID","Not found in master","",""]);
+    Object.entries(r.cells).forEach(([k,c])=>{ if(c.state==="bad"){const kind=FIELDS[k].kind;
+      mm.push([r.id,nm,FIELDS[k].label,kind==="money"?c.iv:show(kind,c.iv),kind==="money"?c.mv:show(kind,c.mv),c.diff!=null?c.diff:""]);}});
+  });
+  const ws2=XLSX.utils.aoa_to_sheet(mm);
+  for(let c=0;c<6;c++){const a=XLSX.utils.encode_cell({r:0,c});ws2[a].s=H;}
+  for(let R=1;R<mm.length;R++)for(const c of [3,4,5]){const a=XLSX.utils.encode_cell({r:R,c});if(ws2[a]&&ws2[a].t==="n")ws2[a].z="#,##0.00";}
+  ws2["!cols"]=[{wch:13},{wch:24},{wch:22},{wch:18},{wch:18},{wch:16}];
+  XLSX.utils.book_append_sheet(wb,ws2,"Mismatches");
+  if(RESULT.masterIssues.size){
+    const mi=[["Customer ID","Problem in master files"]];
+    RESULT.masterIssues.forEach((l,id)=>l.forEach(x=>mi.push([id,x])));
+    const ws3=XLSX.utils.aoa_to_sheet(mi); ws3.A1.s=H; ws3.B1.s=H; ws3["!cols"]=[{wch:13},{wch:90}];
+    XLSX.utils.book_append_sheet(wb,ws3,"Master Check");
+  }
+  return wb;
+}
+function stamp(){const d=new Date();return d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+"-"+pad(d.getHours())+pad(d.getMinutes());}
+function save(filename,data){
+  try{
+    const blob=data instanceof Blob?data:new Blob([data],{type:filename.endsWith(".csv")?"text/csv;charset=utf-8":"application/octet-stream"});
+    const url=URL.createObjectURL(blob); const a=document.createElement("a");
+    a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000); toast("Downloaded "+filename);
+  }catch(e){ toast("The file couldn’t be downloaded"+(e&&e.message?": "+e.message:".")); }
+}
+$("#dlx").addEventListener("click",()=>{
+  if(!RESULT) return;
+  try{
+    const wb=buildWorkbook(); const buf=XLSX.write(wb,{bookType:"xlsx",type:"array"});
+    save(`Tally_Result_${stamp()}.xlsx`,new Blob([buf]));
+  }catch(e){toast("The Excel file couldn’t be built: "+(e.message||e));}
+});
+$("#dlc").addEventListener("click",()=>{
+  if(!RESULT) return;
+  const q=v=>{const s=String(v==null?"":v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const inp=S.input, nameCol=inp.perCol.indexOf("name");
+  const lines=[["Customer ID","Customer Name","Status","Details"].join(",")];
+  RESULT.rows.filter(r=>r.status!=="ok").forEach(r=>lines.push([r.id,nameCol>=0?r.raw[nameCol]:"",STATUS_LABEL[r.status],r.notes.join("; ")].map(q).join(",")));
+  if(lines.length===1){toast("Nothing to list: every customer matched.");return;}
+  save(`Tally_Mismatches_${stamp()}.csv`,"\uFEFF"+lines.join("\r\n"));
+});
+
+/* ---------- runtime ---------- */
+$("#dlnote").hidden=true;
+window.addEventListener("load",()=>{
+  if(typeof XLSX==="undefined"||typeof Papa==="undefined") $("#runmsg").textContent="A file reader didn’t load. Check your connection and reload the page.";
+});
+})();
+</script>
+</body>
+</html>
