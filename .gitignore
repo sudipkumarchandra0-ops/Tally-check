@@ -1,0 +1,12 @@
+# Customer data must never be committed.
+samples/
+*.csv
+*.xlsx
+*.xls
+*.xlsm
+
+# System and editor files
+.DS_Store
+Thumbs.db
+node_modules/
+.vercel
