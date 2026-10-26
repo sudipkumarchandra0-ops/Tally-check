@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Customer Tally Check</title>
+<meta name="description" content="Check an input sheet of customer figures against the transaction master and customer summary. Runs entirely in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>window.LIB_ERRORS=[];</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" onerror="LIB_ERRORS.push('CSV reader')"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="LIB_ERRORS.push('Excel reader')"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Customer Tally Check</h1>
+    <p class="lede">Upload the master files and the input sheet you want to check. Every customer in the input is compared with the masters, and any figure that doesn’t agree is marked with the correct value next to it.</p>
+    <p class="privacy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Files are read inside your browser. Nothing is uploaded or stored.</p>
+    <p class="banner" id="libError" role="alert" hidden></p>
+  </header>
+
+  <section aria-labelledby="files-h">
+    <h2 id="files-h">Files</h2>
+    <div class="slots">
+      <div class="slot" data-slot="txn">
+        <div class="slot-head"><span class="slot-name">Transaction master</span><span class="req">CSV or Excel</span></div>
+        <p class="slot-hint">Every deposit and withdrawal: Customer ID, Date, Transaction Type, Amount, Current Balance.</p>
+        <p class="file-name"></p>
+        <p class="status" role="status"></p>
+        <div class="pick"><label class="btn small"><input type="file" accept=".csv,.xlsx,.xls">Choose file</label><span class="req">or drop it here</span><button class="btn link clear" type="button" hidden>Remove</button></div>
+      </div>
+      <div class="slot" data-slot="sum">
+        <div class="slot-head"><span class="slot-name">Customer summary</span><span class="req">CSV or Excel</span></div>
+        <p class="slot-hint">One row per customer: Customer ID, Name, Total Deposits, Total Withdrawals, Current Balance.</p>
+        <p class="file-name"></p>
+        <p class="status" role="status"></p>
+        <div class="pick"><label class="btn small"><input type="file" accept=".csv,.xlsx,.xls">Choose file</label><span class="req">or drop it here</span><button class="btn link clear" type="button" hidden>Remove</button></div>
+      </div>
+      <div class="slot" data-slot="input">
+        <div class="slot-head"><span class="slot-name">Input to check</span><span class="req">Excel or CSV</span></div>
+        <p class="slot-hint">Your entries. Needs a Customer ID column plus any of: Name, Deposits, Withdrawals, Balance.</p>
+        <p class="file-name"></p>
+        <p class="status" role="status"></p>
+        <div class="pick"><label class="btn small"><input type="file" accept=".csv,.xlsx,.xls">Choose file</label><span class="req">or drop it here</span><button class="btn link clear" type="button" hidden>Remove</button></div>
+      </div>
+    </div>
+    <div class="runbar">
+      <button class="btn primary" id="run" type="button" disabled>Run tally</button>
+      <label class="tol">Allowed difference ₹ <input id="tol" type="number" min="0" step="0.01" value="0.00" inputmode="decimal"></label>
+      <span class="runmsg" id="runmsg">Add the input file and at least one master file.</span>
+    </div>
+  </section>
+
+  <section id="results" hidden aria-labelledby="verdict">
+    <p class="verdict" id="verdict"></p>
+    <p class="meta" id="meta"></p>
+    <div id="masterNotice"></div>
+    <div class="filters" role="group" aria-label="Show customers">
+      <button type="button" class="chip" data-f="all" aria-pressed="true">All <b id="c-all">0</b></button>
+      <button type="button" class="chip" data-f="bad" aria-pressed="false"><span class="dot" style="background:var(--bad)"></span>Mismatch <b id="c-bad">0</b></button>
+      <button type="button" class="chip" data-f="missing" aria-pressed="false"><span class="dot" style="background:var(--bad);opacity:.5"></span>Not in master <b id="c-missing">0</b></button>
+      <button type="button" class="chip" data-f="warn" aria-pressed="false"><span class="dot" style="background:var(--warn)"></span>Needs a look <b id="c-warn">0</b></button>
+      <button type="button" class="chip" data-f="ok" aria-pressed="false"><span class="dot" style="background:var(--ok)"></span>Matched <b id="c-ok">0</b></button>
+    </div>
+    <div class="tools">
+      <input type="search" id="q" placeholder="Search by Customer ID or name" aria-label="Search by Customer ID or name">
+      <span class="spacer"></span>
+      <button class="btn small" id="dlx" type="button">Download marked Excel</button>
+      <button class="btn small" id="dlc" type="button">Download mismatch list (CSV)</button>
+          </div>
+    <div class="tablebox"><table id="tbl"><thead></thead><tbody></tbody></table><div class="more" id="more" hidden></div></div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
